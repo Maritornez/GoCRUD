@@ -1,6 +1,7 @@
 # Как запустить приложение
 
-Контейнеры загружены на DockerHub
+Контейнеры загружены на DockerHub.
+
 Запуск контейнера с базой данных Reindexer
 ```
 docker run -d -p 6534:6534 -p 9088:9088 --net involta --name reindexer reindexer/reindexer
