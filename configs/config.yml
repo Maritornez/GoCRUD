@@ -1,0 +1,13 @@
+# Database credentials
+database:
+  #host: "127.0.0.1" # без докера
+  #host: 172.18.0.2 # docker, но без docker-compose
+  host: 172.27.0.3 # docker-compose
+  port: 6534
+  user: "user"
+  pass: "pass"
+  db_name: testdb
+server:
+  port: 8080
+
+

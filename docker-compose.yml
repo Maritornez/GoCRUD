@@ -1,0 +1,18 @@
+version: "2.19.1"
+services:
+  db:
+    stdin_open: true
+    tty: true
+    image: reindexer/reindexer
+    ports:
+      - "6534:6534"
+      - "9088:9088"
+  web:
+    stdin_open: true
+    tty: true
+    image: ejrglkenr/go_crud_v3
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/code
+
