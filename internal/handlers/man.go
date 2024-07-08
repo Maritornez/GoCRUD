@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"InvoltaTask/internal/models"
+	"github.com/Maritornez/GoCRUD/internal/models"
 	"net/http"
 
 	"github.com/gin-gonic/gin"

@@ -7,7 +7,7 @@ import (
 	// use Reindexer as standalone server and connect to it via TCP.
 	_ "github.com/restream/reindexer/v3/bindings/cproto"
 
-	"InvoltaTask/internal/config"
+	"github.com/Maritornez/GoCRUD/internal/config"
 )
 
 var DB *reindexer.Reindexer

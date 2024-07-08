@@ -1,4 +1,4 @@
-module InvoltaTask
+module github.com/Maritornez/GoCRUD
 
 go 1.20
 

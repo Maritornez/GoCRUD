@@ -2,9 +2,9 @@ package main
 
 // Import package
 import (
-	"InvoltaTask/internal/config"
-	"InvoltaTask/internal/handlers"
-	"InvoltaTask/internal/models"
+	"github.com/Maritornez/GoCRUD/internal/config"
+	"github.com/Maritornez/GoCRUD/internal/handlers"
+	"github.com/Maritornez/GoCRUD/internal/models"
 
 	"github.com/gin-gonic/gin" // Framework "Gin"
 )
