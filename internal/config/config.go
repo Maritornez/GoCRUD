@@ -11,15 +11,16 @@ const YamlPath = "../configs/config.yml"
 // Config struct for webapp config
 type Config struct {
 	Database struct {
-		Host   string `yaml:"host"`
-		Port   string `yaml:"port"`
-		User   string `yaml:"user"`
-		Pass   string `yaml:"pass"`
-		DBName string `yaml:"db_name"`
+		IpAddress string `yaml:"ip_address"`
+		Port      string `yaml:"port"`
+		User      string `yaml:"user"`
+		Pass      string `yaml:"pass"`
+		DBName    string `yaml:"db_name"`
 	} `yaml:"database"`
 	Server struct {
-		Port string `yaml:"port"`
-	}
+		IpAddress string `yaml:"ip_address"`
+		Port      string `yaml:"port"`
+	} `yaml:"server"`
 }
 
 func NewConfig(path string) (*Config, error) {

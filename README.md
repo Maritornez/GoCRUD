@@ -22,15 +22,13 @@ docker run -d -p 8080:8080 --net involta --name go_crud_v2 ejrglkenr/go_crud_v2
 # Как взаимодействовать с приложением
 
 Endpoints для тестирования с помощью Postman:
-- GET    http://localhost:8080/mans
-- GET    http://localhost:8080/mans/{id}
-- POST   http://localhost:8080/mans
-- PATCH  http://localhost:8080/mans/{id}
-- DELETE http://localhost:8080/mans/{id}
+- GET    http://localhost:8080/men
+- GET    http://localhost:8080/man/{id}
+- POST   http://localhost:8080/man?limit=10&offset=0
+- PATCH  http://localhost:8080/man/{id}
+- DELETE http://localhost:8080/man/{id}
 
 *Вместо id нужно подставить идентификатор документа*
 
 
 Схема документа (для того, чтобы по ней создавать свои документы для HTTP-запросов) представлена в данном репозитории в директории assets/TestInputMan.json
-
-***Форма множественного числа слова "man" будет "men". Форма "mans использовалась для наглядности того, что это множественное число"***

@@ -1,12 +1,13 @@
 # Database credentials
 database:
-  #host: "127.0.0.1" # без докера
-  host: 172.18.0.2 # docker
+  ip_address: "127.0.0.1" # без докера
+  #host: 172.18.0.2 # docker
   port: 6534
   user: "user"
   pass: "pass"
   db_name: testdb
 server:
+  ip_address: "127.0.0.1"
   port: 8080
 
 

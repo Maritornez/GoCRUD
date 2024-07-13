@@ -1,0 +1,15 @@
+{ 
+    "man_id": 1,
+    "title": "weight",
+    "content": "overweight, 90",
+    "pages": [
+        {
+            "title": "first",
+            "content": "1234567890"
+        },
+        {
+            "title": "second",
+            "content": "0987654321"
+        }
+    ]
+}
