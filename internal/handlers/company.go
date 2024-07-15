@@ -1,18 +1,16 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
-	"github.com/Maritornez/GoCRUD/internal/context"
 	"github.com/Maritornez/GoCRUD/internal/models"
+	"github.com/Maritornez/GoCRUD/internal/modelsBind"
+	"github.com/Maritornez/GoCRUD/internal/storage"
 
 	"github.com/gin-gonic/gin"
-
-	// use Reindexer as standalone server and connect to it via TCP.
-
-	// use Reindexer as standalone server and connect to it via TCP.
-	"github.com/restream/reindexer/v3"
+	"github.com/restream/reindexer/v3" // use Reindexer as standalone server and connect to it via TCP.
 	_ "github.com/restream/reindexer/v3/bindings/cproto"
 )
 
@@ -25,7 +23,7 @@ func CreateCompany(c *gin.Context) {
 	}
 
 	// Нахождение наибольшего значения id, чтобы вычислить значние id добавляемого документа
-	iterator := context.DB.Query("company").Select("*").Sort("id", true).Limit(1).Exec()
+	iterator := storage.DB.Query("company").Select("*").Sort("id", true).Limit(1).Exec()
 	defer iterator.Close()
 
 	hasNext := iterator.Next()
@@ -45,7 +43,7 @@ func CreateCompany(c *gin.Context) {
 	}
 
 	// Добавление нового документа в пространство имен "company"
-	context.DB.Upsert("company", company)
+	storage.DB.Upsert("company", company)
 
 	c.JSON(http.StatusOK, gin.H{"data": company})
 }
@@ -71,25 +69,68 @@ func FindCompanies(c *gin.Context) {
 		return
 	}
 
-	// Выполнить запрос с сортировкой по полю sort в обратном порядке
-	iterator := context.DB.Query("company").Sort("name", false).Limit(limit).Offset(offset).Exec()
+	// Выполнить запрос с сортировкой по полю name в обратном порядке
+	iterator := storage.DB.Query("company").Sort("name", false).Limit(limit).Offset(offset).Exec()
 	defer iterator.Close()
 
-	companies := make([]models.Company, 0)
+	companiesBind := make([]modelsBind.CompanyBind, 0)
 	for iterator.Next() {
-		companies = append(companies, *iterator.Object().(*models.Company))
+		company := iterator.Object().(*models.Company)
+
+		// Поиск подходящих man для данной company
+		iterator := storage.DB.Query("man").Where("company_id", reindexer.EQ, company.Id).Sort("sort", true).Exec()
+		defer iterator.Close()
+
+		menBind := make([]modelsBind.ManBind, 0)
+		for iterator.Next() {
+			man := iterator.Object().(*models.Man)
+
+			// Поиск подходящих tip для данного man
+			iterator := storage.DB.Query("tip").Sort("title", false).Where("man_id", reindexer.EQ, man.Id).Exec()
+			defer iterator.Close()
+
+			tips := make([]models.Tip, 0)
+			for iterator.Next() {
+				tips = append(tips, *iterator.Object().(*models.Tip))
+			}
+
+			manBind := modelsBind.ManBind{
+				Id:        man.Id,
+				Name:      man.Name,
+				Age:       man.Age,
+				CompanyId: man.CompanyId,
+				Sort:      man.Sort,
+				Tips:      tips,
+			}
+			menBind = append(menBind, manBind)
+		}
+
+		if err := iterator.Error(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		companyBind := modelsBind.CompanyBind{
+			Id:          company.Id,
+			Name:        company.Name,
+			Established: company.Established,
+			Men:         menBind,
+		}
+
+		companiesBind = append(companiesBind, companyBind)
 	}
 
 	if err := iterator.Error(); err != nil {
-		panic(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
-	totalCount := context.DB.Query("company").Select("*").Exec().Count()
+	totalCount := storage.DB.Query("company").Select("*").Exec().Count()
 
 	totalPages := (totalCount + limit - 1) / limit
 
 	c.JSON(http.StatusOK, gin.H{
-		"data":        companies,
+		"data":        companiesBind,
 		"total_count": totalCount,
 		"page":        (offset / limit) + 1,
 		"total_pages": totalPages,
@@ -97,21 +138,78 @@ func FindCompanies(c *gin.Context) {
 }
 
 func FindCompany(c *gin.Context) {
-	elem, found := context.DB.Query("company").
-		Where("id", reindexer.EQ, c.Param("id")).
-		Get()
+	//Проверка наличия tip с указанным id в кэше
+	id := c.Param("id")
+	cacheKey := "company:" + id
 
-	if found {
-		item := elem.(*models.Company)
-		c.JSON(http.StatusOK, gin.H{"data": item})
-	} else {
-		c.JSON(http.StatusOK, gin.H{"error:": "Company with specified Id does not exist"})
+	if cachedData, err := storage.Cache.Get(cacheKey); err == nil {
+		var companyBind modelsBind.CompanyBind
+		if err := json.Unmarshal(cachedData, &companyBind); err == nil {
+			c.JSON(http.StatusOK, gin.H{"data": companyBind})
+			return
+		}
 	}
 
+	elem, found := storage.DB.Query("company").Where("id", reindexer.EQ, c.Param("id")).Get()
+
+	if found {
+		company := elem.(*models.Company)
+
+		// Поиск подходящих man для данной company
+		iterator := storage.DB.Query("man").Where("company_id", reindexer.EQ, company.Id).Sort("sort", true).Exec()
+		defer iterator.Close()
+
+		menBind := make([]modelsBind.ManBind, 0)
+		for iterator.Next() {
+			man := iterator.Object().(*models.Man)
+
+			// Поиск подходящих tip для данного man
+			iterator := storage.DB.Query("tip").Sort("title", false).Where("man_id", reindexer.EQ, man.Id).Exec()
+			defer iterator.Close()
+
+			tips := make([]models.Tip, 0)
+			for iterator.Next() {
+				tips = append(tips, *iterator.Object().(*models.Tip))
+			}
+
+			manBind := modelsBind.ManBind{
+				Id:        man.Id,
+				Name:      man.Name,
+				Age:       man.Age,
+				CompanyId: man.CompanyId,
+				Sort:      man.Sort,
+				Tips:      tips,
+			}
+			menBind = append(menBind, manBind)
+		}
+
+		if err := iterator.Error(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		companyBind := modelsBind.CompanyBind{
+			Id:          company.Id,
+			Name:        company.Name,
+			Established: company.Established,
+			Men:         menBind,
+		}
+
+		// Кэширование данных
+		jsonData, err := json.Marshal(companyBind)
+		if err == nil {
+			storage.Cache.Set(cacheKey, jsonData)
+		}
+
+		c.JSON(http.StatusOK, gin.H{"data": companyBind})
+	} else {
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error:": "Company with specified Id does not exist"})
+		return
+	}
 }
 
 func UpdateCompany(c *gin.Context) {
-	elem, found := context.DB.Query("company").
+	elem, found := storage.DB.Query("company").
 		Where("id", reindexer.EQ, c.Param("id")).
 		Get()
 
@@ -134,7 +232,7 @@ func UpdateCompany(c *gin.Context) {
 			item.Established = *input.Established
 		}
 
-		if _, err := context.DB.Update("company", item); err != nil {
+		if _, err := storage.DB.Update("company", item); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -142,21 +240,51 @@ func UpdateCompany(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"data": item})
 	} else {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Company with specified Id does not exist"})
+		return
 	}
 }
 
 func DeleteCompany(c *gin.Context) {
-	elem, found := context.DB.Query("company").
+	elem, found := storage.DB.Query("company").
 		Where("id", reindexer.EQ, c.Param("id")).
 		Get()
 
 	if found {
-		item := elem.(*models.Company)
-		if err := context.DB.Delete("company", item); err != nil {
+		company := elem.(*models.Company)
+
+		// Удаление связанных man
+		iteratorMan := storage.DB.Query("man").Where("company_id", reindexer.EQ, company.Id).Exec()
+		defer iteratorMan.Close()
+
+		for iteratorMan.Next() {
+			man := iteratorMan.Object().(*models.Man)
+
+			// Удаление связанных tip
+			iteratorTip := storage.DB.Query("tip").Where("man_id", reindexer.EQ, man.Id).Exec()
+			defer iteratorTip.Close()
+
+			for iteratorTip.Next() {
+				tip := iteratorTip.Object().(*models.Tip)
+				if err := storage.DB.Delete("tip", tip); err != nil {
+					c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+			}
+
+			if err := storage.DB.Delete("man", man); err != nil {
+				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		if err := storage.DB.Delete("company", company); err != nil {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
+		c.JSON(http.StatusOK, gin.H{"data": company})
 	} else {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Company with specified Id does not exist"})
+		return
 	}
 }

@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
-	"github.com/Maritornez/GoCRUD/internal/context"
 	"github.com/Maritornez/GoCRUD/internal/models"
+	"github.com/Maritornez/GoCRUD/internal/modelsBind"
+	"github.com/Maritornez/GoCRUD/internal/storage"
 
 	"github.com/gin-gonic/gin"
 
@@ -23,8 +25,8 @@ func CreateMan(c *gin.Context) {
 		return
 	}
 
-	//Проверка наличия компании с указанным id
-	_, found := context.DB.Query("company").
+	//Проверка наличия company с указанным id
+	_, found := storage.DB.Query("company").
 		Where("id", reindexer.EQ, input.CompanyId).
 		Get()
 	if !found {
@@ -33,7 +35,7 @@ func CreateMan(c *gin.Context) {
 	}
 
 	// Нахождение наибольшего значения id, чтобы вычислить значние id добавляемого документа
-	iterator := context.DB.Query("man").Select("*").Sort("id", true).Limit(1).Exec()
+	iterator := storage.DB.Query("man").Select("*").Sort("id", true).Limit(1).Exec()
 	defer iterator.Close()
 
 	hasNext := iterator.Next()
@@ -54,8 +56,7 @@ func CreateMan(c *gin.Context) {
 		Sort:      input.Sort,
 	}
 
-	// Добавление нового документа в пространство имен "man"
-	context.DB.Upsert("man", man)
+	storage.DB.Upsert("man", man)
 
 	c.JSON(http.StatusOK, gin.H{"data": man})
 }
@@ -82,24 +83,44 @@ func FindMen(c *gin.Context) {
 	}
 
 	// Выполнить запрос с сортировкой по полю sort в обратном порядке
-	iterator := context.DB.Query("man").Sort("sort", true).Limit(limit).Offset(offset).Exec()
+	iterator := storage.DB.Query("man").Sort("sort", true).Limit(limit).Offset(offset).Exec()
 	defer iterator.Close()
 
-	men := make([]models.Man, 0)
+	menBind := make([]modelsBind.ManBind, 0)
 	for iterator.Next() {
-		men = append(men, *iterator.Object().(*models.Man))
+		man := iterator.Object().(*models.Man)
+
+		// Поиск подходящих tip для данного man
+		iterator := storage.DB.Query("tip").Sort("title", false).Where("man_id", reindexer.EQ, man.Id).Exec()
+		defer iterator.Close()
+
+		tips := make([]models.Tip, 0)
+		for iterator.Next() {
+			tips = append(tips, *iterator.Object().(*models.Tip))
+		}
+
+		manBind := modelsBind.ManBind{
+			Id:        man.Id,
+			Name:      man.Name,
+			Age:       man.Age,
+			CompanyId: man.CompanyId,
+			Sort:      man.Sort,
+			Tips:      tips,
+		}
+		menBind = append(menBind, manBind)
 	}
 
 	if err := iterator.Error(); err != nil {
-		panic(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
-	totalCount := context.DB.Query("man").Select("*").Exec().Count()
+	totalCount := storage.DB.Query("man").Select("*").Exec().Count()
 
 	totalPages := (totalCount + limit - 1) / limit
 
 	c.JSON(http.StatusOK, gin.H{
-		"data":        men,
+		"data":        menBind,
 		"total_count": totalCount,
 		"page":        (offset / limit) + 1,
 		"total_pages": totalPages,
@@ -107,20 +128,62 @@ func FindMen(c *gin.Context) {
 }
 
 func FindMan(c *gin.Context) {
-	elem, found := context.DB.Query("man"). // elem is interface{}
-						Where("id", reindexer.EQ, c.Param("id")).
-						Get()
+	//Проверка наличия tip с указанным id в кэше
+	id := c.Param("id")
+	cacheKey := "man:" + id
+
+	if cachedData, err := storage.Cache.Get(cacheKey); err == nil {
+		var manBind modelsBind.ManBind
+		if err := json.Unmarshal(cachedData, &manBind); err == nil {
+			c.JSON(http.StatusOK, gin.H{"data": manBind})
+			return
+		}
+	}
+
+	// elem is interface{}
+	elem, found := storage.DB.Query("man").Where("id", reindexer.EQ, c.Param("id")).Get()
 
 	if found {
 		item := elem.(*models.Man) // item is *models.Man
-		c.JSON(http.StatusOK, gin.H{"data": item})
+
+		// Поиск подходящих tip для данного man
+		iterator := storage.DB.Query("tip").Where("man_id", reindexer.EQ, item.Id).Sort("title", false).Exec()
+		defer iterator.Close()
+
+		tips := make([]models.Tip, 0)
+		for iterator.Next() {
+			tips = append(tips, *iterator.Object().(*models.Tip))
+		}
+
+		if err := iterator.Error(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		manBind := modelsBind.ManBind{
+			Id:        item.Id,
+			Name:      item.Name,
+			Age:       item.Age,
+			CompanyId: item.CompanyId,
+			Sort:      item.Sort,
+			Tips:      tips,
+		}
+
+		// Кэширование данных
+		jsonData, err := json.Marshal(manBind)
+		if err == nil {
+			storage.Cache.Set(cacheKey, jsonData)
+		}
+
+		c.JSON(http.StatusOK, gin.H{"data": manBind})
 	} else {
 		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "Man with specified Id does not exist"})
+		return
 	}
 }
 
 func UpdateMan(c *gin.Context) {
-	elem, found := context.DB.Query("man").
+	elem, found := storage.DB.Query("man").
 		Where("id", reindexer.EQ, c.Param("id")).
 		Get()
 
@@ -145,7 +208,7 @@ func UpdateMan(c *gin.Context) {
 			item.Age = *input.Age
 		}
 		if input.CompanyId != nil {
-			_, found := context.DB.Query("company").
+			_, found := storage.DB.Query("company").
 				Where("id", reindexer.EQ, input.CompanyId).
 				Get()
 			if !found {
@@ -158,7 +221,7 @@ func UpdateMan(c *gin.Context) {
 			item.Sort = *input.Sort
 		}
 
-		if _, err := context.DB.Update("man", item); err != nil {
+		if _, err := storage.DB.Update("man", item); err != nil {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -166,20 +229,35 @@ func UpdateMan(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"data": item})
 	} else {
 		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "Man with specified Id does not exist"})
+		return
 	}
 }
 
 func DeleteMan(c *gin.Context) {
-	elem, found := context.DB.Query("man").
+	elem, found := storage.DB.Query("man").
 		Where("id", reindexer.EQ, c.Param("id")).
 		Get()
 	if found {
 		item := elem.(*models.Man)
-		if err := context.DB.Delete("man", item); err != nil {
+
+		// Удаление связанных tip
+		iterator := storage.DB.Query("tip").Where("man_id", reindexer.EQ, item.Id).Exec()
+		defer iterator.Close()
+
+		for iterator.Next() {
+			if err := storage.DB.Delete("tip", iterator.Object().(*models.Tip)); err != nil {
+				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		if err := storage.DB.Delete("man", item); err != nil {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		c.JSON(http.StatusOK, gin.H{"data": item})
 	} else {
 		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "Man with specified Id does not exist"})
+		return
 	}
 }

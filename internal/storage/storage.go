@@ -1,20 +1,21 @@
-package context
+package storage
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"time"
 
-	"github.com/Maritornez/GoCRUD/internal/models"
-
+	"github.com/allegro/bigcache/v3"
 	"github.com/restream/reindexer/v3"
-
-	// use Reindexer as standalone server and connect to it via TCP.
-	_ "github.com/restream/reindexer/v3/bindings/cproto"
+	_ "github.com/restream/reindexer/v3/bindings/cproto" // use Reindexer as standalone server and connect to it via TCP.
 
 	"github.com/Maritornez/GoCRUD/internal/config"
+	"github.com/Maritornez/GoCRUD/internal/models"
 )
 
 var DB *reindexer.Reindexer
+var Cache *bigcache.BigCache
 
 func ConnectDatabase() {
 	config, err_config := config.NewConfig(config.YamlPath)
@@ -39,7 +40,7 @@ func ConnectDatabase() {
 	if DB.Status().Err == nil {
 		fmt.Println("Connected to DB")
 
-		// Создание пространств имен (если их нет)
+		// Открывите пространств имен. Если пространство не существует, то оно будет создано
 		if err := DB.OpenNamespace("man", reindexer.DefaultNamespaceOptions(), models.Man{}); err != nil {
 			panic(err)
 		}
@@ -57,4 +58,8 @@ func ConnectDatabase() {
 
 func CloseDatabase() {
 	DB.Close()
+}
+
+func InitCache() {
+	Cache, _ = bigcache.New(context.Background(), bigcache.DefaultConfig(15*time.Minute))
 }
