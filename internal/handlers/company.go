@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/Maritornez/GoCRUD/internal/models"
-	"github.com/Maritornez/GoCRUD/internal/modelsBind"
+	"github.com/Maritornez/GoCRUD/internal/models_bind"
+	"github.com/Maritornez/GoCRUD/internal/models_del"
 	"github.com/Maritornez/GoCRUD/internal/storage"
 
 	"github.com/gin-gonic/gin"
@@ -48,6 +50,22 @@ func CreateCompany(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": company})
 }
 
+// Функция для обработки модели Company (удаляется поле Established)
+// (вложенные man и tip тоже обрабатываются)
+func processCompany(company models_bind.CompanyBind) models_del.CompanyBindDel {
+	processedMen := make([]models_del.ManBindDel, 0)
+	for i := range company.Men {
+		processedMen = append(processedMen, processMan(company.Men[i]))
+	}
+
+	companyBindDel := models_del.CompanyBindDel{
+		Id:   company.Id,
+		Name: company.Name,
+		Men:  processedMen,
+	}
+	return companyBindDel
+}
+
 func FindCompanies(c *gin.Context) {
 	// Получить параметры limit и offset из запроса
 	limitParam := c.DefaultQuery("limit", "10")
@@ -73,15 +91,18 @@ func FindCompanies(c *gin.Context) {
 	iterator := storage.DB.Query("company").Sort("name", false).Limit(limit).Offset(offset).Exec()
 	defer iterator.Close()
 
-	companiesBind := make([]modelsBind.CompanyBind, 0)
+	var wg sync.WaitGroup
+	companiesBindDel := make([]models_del.CompanyBindDel, 0)
+	companyBindDelChannel := make(chan models_del.CompanyBindDel, limit)
 	for iterator.Next() {
 		company := iterator.Object().(*models.Company)
+		wg.Add(1)
 
 		// Поиск подходящих man для данной company
 		iterator := storage.DB.Query("man").Where("company_id", reindexer.EQ, company.Id).Sort("sort", true).Exec()
 		defer iterator.Close()
 
-		menBind := make([]modelsBind.ManBind, 0)
+		menBind := make([]models_bind.ManBind, 0)
 		for iterator.Next() {
 			man := iterator.Object().(*models.Man)
 
@@ -94,7 +115,7 @@ func FindCompanies(c *gin.Context) {
 				tips = append(tips, *iterator.Object().(*models.Tip))
 			}
 
-			manBind := modelsBind.ManBind{
+			manBind := models_bind.ManBind{
 				Id:        man.Id,
 				Name:      man.Name,
 				Age:       man.Age,
@@ -110,14 +131,29 @@ func FindCompanies(c *gin.Context) {
 			return
 		}
 
-		companyBind := modelsBind.CompanyBind{
+		companyBind := models_bind.CompanyBind{
 			Id:          company.Id,
 			Name:        company.Name,
 			Established: company.Established,
 			Men:         menBind,
 		}
 
-		companiesBind = append(companiesBind, companyBind)
+		//companiesBind = append(companiesBind, companyBind)
+
+		// Обработка каждого документа в отдельной горутине
+		go func(company models_bind.CompanyBind) {
+			defer wg.Done()
+			companyBindDelChannel <- processCompany(company)
+		}(companyBind)
+	}
+
+	go func() {
+		wg.Wait()
+		close(companyBindDelChannel)
+	}()
+
+	for companyBindDel := range companyBindDelChannel {
+		companiesBindDel = append(companiesBindDel, companyBindDel)
 	}
 
 	if err := iterator.Error(); err != nil {
@@ -130,7 +166,7 @@ func FindCompanies(c *gin.Context) {
 	totalPages := (totalCount + limit - 1) / limit
 
 	c.JSON(http.StatusOK, gin.H{
-		"data":        companiesBind,
+		"data":        companiesBindDel,
 		"total_count": totalCount,
 		"page":        (offset / limit) + 1,
 		"total_pages": totalPages,
@@ -143,7 +179,7 @@ func FindCompany(c *gin.Context) {
 	cacheKey := "company:" + id
 
 	if cachedData, err := storage.Cache.Get(cacheKey); err == nil {
-		var companyBind modelsBind.CompanyBind
+		var companyBind models_bind.CompanyBind
 		if err := json.Unmarshal(cachedData, &companyBind); err == nil {
 			c.JSON(http.StatusOK, gin.H{"data": companyBind})
 			return
@@ -159,7 +195,7 @@ func FindCompany(c *gin.Context) {
 		iterator := storage.DB.Query("man").Where("company_id", reindexer.EQ, company.Id).Sort("sort", true).Exec()
 		defer iterator.Close()
 
-		menBind := make([]modelsBind.ManBind, 0)
+		menBind := make([]models_bind.ManBind, 0)
 		for iterator.Next() {
 			man := iterator.Object().(*models.Man)
 
@@ -172,7 +208,7 @@ func FindCompany(c *gin.Context) {
 				tips = append(tips, *iterator.Object().(*models.Tip))
 			}
 
-			manBind := modelsBind.ManBind{
+			manBind := models_bind.ManBind{
 				Id:        man.Id,
 				Name:      man.Name,
 				Age:       man.Age,
@@ -188,7 +224,7 @@ func FindCompany(c *gin.Context) {
 			return
 		}
 
-		companyBind := modelsBind.CompanyBind{
+		companyBind := models_bind.CompanyBind{
 			Id:          company.Id,
 			Name:        company.Name,
 			Established: company.Established,

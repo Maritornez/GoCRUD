@@ -1,4 +1,4 @@
-package modelsBind
+package models_bind
 
 import (
 	"github.com/Maritornez/GoCRUD/internal/models"

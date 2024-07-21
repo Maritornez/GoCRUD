@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/Maritornez/GoCRUD/internal/models"
-	"github.com/Maritornez/GoCRUD/internal/modelsBind"
+	"github.com/Maritornez/GoCRUD/internal/models_bind"
+	"github.com/Maritornez/GoCRUD/internal/models_del"
 	"github.com/Maritornez/GoCRUD/internal/storage"
 
 	"github.com/gin-gonic/gin"
@@ -61,6 +63,24 @@ func CreateMan(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": man})
 }
 
+// Функция для обработки модели Man (удаляется поля companyId)
+// (вложенные tip тоже обрабатываются)
+func processMan(man models_bind.ManBind) models_del.ManBindDel {
+	processedTips := make([]models_del.TipDel, 0)
+	for i := range man.Tips {
+		processedTips = append(processedTips, processTip(man.Tips[i]))
+	}
+
+	manDel := models_del.ManBindDel{
+		Id:   man.Id,
+		Name: man.Name,
+		Age:  man.Age,
+		Sort: man.Sort,
+		Tips: processedTips,
+	}
+	return manDel
+}
+
 func FindMen(c *gin.Context) {
 	// Получить параметры limit и offset из запроса
 	limitParam := c.DefaultQuery("limit", "10")
@@ -86,9 +106,12 @@ func FindMen(c *gin.Context) {
 	iterator := storage.DB.Query("man").Sort("sort", true).Limit(limit).Offset(offset).Exec()
 	defer iterator.Close()
 
-	menBind := make([]modelsBind.ManBind, 0)
+	var wg sync.WaitGroup
+	menBindDel := make([]models_del.ManBindDel, 0)
+	manBindDelChannel := make(chan models_del.ManBindDel, limit)
 	for iterator.Next() {
 		man := iterator.Object().(*models.Man)
+		wg.Add(1)
 
 		// Поиск подходящих tip для данного man
 		iterator := storage.DB.Query("tip").Sort("title", false).Where("man_id", reindexer.EQ, man.Id).Exec()
@@ -99,7 +122,7 @@ func FindMen(c *gin.Context) {
 			tips = append(tips, *iterator.Object().(*models.Tip))
 		}
 
-		manBind := modelsBind.ManBind{
+		manBind := models_bind.ManBind{
 			Id:        man.Id,
 			Name:      man.Name,
 			Age:       man.Age,
@@ -107,7 +130,22 @@ func FindMen(c *gin.Context) {
 			Sort:      man.Sort,
 			Tips:      tips,
 		}
-		menBind = append(menBind, manBind)
+		//menBind = append(menBind, manBind)
+
+		// Обработка каждого документа в отдельной горутине
+		go func(man models_bind.ManBind) {
+			defer wg.Done()
+			manBindDelChannel <- processMan(manBind)
+		}(manBind)
+	}
+
+	go func() {
+		wg.Wait()
+		close(manBindDelChannel)
+	}()
+
+	for manBindDel := range manBindDelChannel {
+		menBindDel = append(menBindDel, manBindDel)
 	}
 
 	if err := iterator.Error(); err != nil {
@@ -120,7 +158,7 @@ func FindMen(c *gin.Context) {
 	totalPages := (totalCount + limit - 1) / limit
 
 	c.JSON(http.StatusOK, gin.H{
-		"data":        menBind,
+		"data":        menBindDel,
 		"total_count": totalCount,
 		"page":        (offset / limit) + 1,
 		"total_pages": totalPages,
@@ -133,7 +171,7 @@ func FindMan(c *gin.Context) {
 	cacheKey := "man:" + id
 
 	if cachedData, err := storage.Cache.Get(cacheKey); err == nil {
-		var manBind modelsBind.ManBind
+		var manBind models_bind.ManBind
 		if err := json.Unmarshal(cachedData, &manBind); err == nil {
 			c.JSON(http.StatusOK, gin.H{"data": manBind})
 			return
@@ -160,7 +198,7 @@ func FindMan(c *gin.Context) {
 			return
 		}
 
-		manBind := modelsBind.ManBind{
+		manBind := models_bind.ManBind{
 			Id:        item.Id,
 			Name:      item.Name,
 			Age:       item.Age,

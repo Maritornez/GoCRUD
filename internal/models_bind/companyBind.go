@@ -1,4 +1,4 @@
-package modelsBind
+package models_bind
 
 type CompanyBind struct {
 	Id          int    `reindex:"id,,pk" json:"id"`
