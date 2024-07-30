@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/Maritornez/GoCRUD/internal/config"
 	"github.com/Maritornez/GoCRUD/internal/handlers"
 	"github.com/Maritornez/GoCRUD/internal/storage"
+	"github.com/joho/godotenv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,12 +30,20 @@ func dbCheckMiddleware(c *gin.Context) {
 }
 
 func main() {
-	// маршрутизаторр включает стандартные middleware: Logger, Recovery
+	// Загрузка переменных окружения из .env файла, если программа не в докер-контейнере
+	err := godotenv.Load("../.env")
+	if err != nil {
+		fmt.Println("Error loading .env file")
+	}
+
+	// Маршрутизаторр включает стандартные middleware: Logger, Recovery
 	router := gin.Default()
 	router.Use(dbCheckMiddleware)
 
 	storage.ConnectDatabase()
 	storage.InitCache()
+
+	storage.InitializeDatabase()
 
 	router.POST("/company", handlers.CreateCompany)
 	router.GET("/companies", handlers.FindCompanies) //companies?limit=10&offset=0
@@ -53,7 +63,7 @@ func main() {
 	router.PATCH("/tip/:id", handlers.UpdateTip)
 	router.DELETE("/tip/:id", handlers.DeleteTip)
 
-	config, err_config := config.NewConfig(config.YamlPath)
+	config, err_config := config.NewConfig()
 	if err_config != nil {
 		panic(err_config)
 	}

@@ -18,7 +18,7 @@ var DB *reindexer.Reindexer
 var Cache *bigcache.BigCache
 
 func ConnectDatabase() {
-	config, err_config := config.NewConfig(config.YamlPath)
+	config, err_config := config.NewConfig()
 	if err_config != nil {
 		dir, err := os.Getwd()
 		if err != nil {
@@ -62,4 +62,78 @@ func CloseDatabase() {
 
 func InitCache() {
 	Cache, _ = bigcache.New(context.Background(), bigcache.DefaultConfig(15*time.Minute))
+}
+
+func InitializeDatabase() {
+	// Проверка, есть ли в базе данных данные
+	iteratorCom := DB.Query("company").Select("*").Limit(1).Exec()
+	defer iteratorCom.Close()
+	iteratorMan := DB.Query("man").Select("*").Limit(1).Exec()
+	defer iteratorMan.Close()
+	iteratorTip := DB.Query("tip").Select("*").Limit(1).Exec()
+	defer iteratorTip.Close()
+
+	if !(iteratorTip.Next() || iteratorMan.Next() || iteratorCom.Next()) {
+
+		initialDataCompanies := []models.Company{
+			{Id: 1, Name: "Pyaterochka", Established: 2010},
+			{Id: 2, Name: "Gazprom", Established: 1989},
+			{Id: 3, Name: "Sberbank", Established: 1841},
+		}
+
+		for _, company := range initialDataCompanies {
+			if err := DB.Upsert("company", company); err != nil {
+				fmt.Println("Ошибка при добавлении данных company:", err)
+			}
+		}
+
+		initialDataMans := []models.Man{
+			{Id: 1, Name: "Alex", Age: 30, CompanyId: 1, Sort: 1},
+			{Id: 2, Name: "Ivan", Age: 24, CompanyId: 1, Sort: 3},
+			{Id: 3, Name: "Max", Age: 27, CompanyId: 1, Sort: 5},
+			{Id: 4, Name: "Petr", Age: 29, CompanyId: 2, Sort: 2},
+			{Id: 5, Name: "Vlad", Age: 22, CompanyId: 2, Sort: 4},
+		}
+
+		for _, man := range initialDataMans {
+			if err := DB.Upsert("man", man); err != nil {
+				fmt.Println("Ошибка при добавлении данных man:", err)
+			}
+		}
+
+		initialDataTips := []models.Tip{
+			{
+				Id: 1, ManId: 1, Title: "Credits",
+				Pages: []models.Page{
+					{Title: "Sberbank", Content: "100000"},
+					{Title: "Alfa Bank", Content: "150000"},
+				},
+			},
+			{
+				Id: 2, ManId: 1, Title: "Hobby",
+				Pages: []models.Page{
+					{Title: "Piano", Content: "From 10 years old"},
+				},
+			},
+			{
+				Id: 3, ManId: 3, Title: "Weight",
+				Pages: []models.Page{
+					{Title: "Weight", Content: "75 kg"},
+				},
+			},
+			{
+				Id: 4, ManId: 4, Title: "Accounts",
+				Pages: []models.Page{
+					{Title: "Steam", Content: "Petr1995"},
+					{Title: "Google", Content: "pertIvanov@gmail.com"},
+				},
+			},
+		}
+
+		for _, tip := range initialDataTips {
+			if err := DB.Upsert("tip", tip); err != nil {
+				fmt.Println("Ошибка при добавлении данных tip:", err)
+			}
+		}
+	}
 }

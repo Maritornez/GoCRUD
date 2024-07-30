@@ -5,8 +5,9 @@ go 1.22.5
 require (
 	github.com/allegro/bigcache/v3 v3.1.0
 	github.com/gin-gonic/gin v1.9.1
+	//gopkg.in/yaml.v2 v2.4.0
+	github.com/joho/godotenv v1.5.1
 	github.com/restream/reindexer/v3 v3.17.0
-	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -48,5 +49,6 @@ require (
 	golang.org/x/sys v0.10.0 // indirect
 	golang.org/x/text v0.11.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -1,18 +1,22 @@
-version: "2.19.1"
 services:
+  web:
+    container_name: gocrud_web
+    image: manoko/go-crud-v3
+    environment:
+      - DB_IP_ADDRESS=db
+      - DB_PORT=6534
+      - DB_USER=user
+      - DB_PASS=pass
+      - DB_NAME=testdb
+      - SERVER_IP_ADDRESS=0.0.0.0
+      - SERVER_PORT=8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
   db:
-    stdin_open: true
-    tty: true
+    container_name: gocrud_db
     image: reindexer/reindexer
     ports:
       - "6534:6534"
       - "9088:9088"
-  web:
-    stdin_open: true
-    tty: true
-    image: ejrglkenr/go_crud_v3
-    ports:
-      - "8080:8080"
-    volumes:
-      - .:/code
-
